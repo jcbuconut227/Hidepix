@@ -59,7 +59,14 @@ async function runStream(data: Bytes, stream: CompressionStream | DecompressionS
 }
 
 // ---------- Encryption (password -> AES-GCM) ----------
+function needSecurePage() {
+  if (!globalThis.crypto?.subtle) {
+    throw new StegoError("This feature needs a secure (https) page. Open the site over https, or turn off the password and Scatter.");
+  }
+}
+
 async function deriveKey(password: string, salt: Bytes): Promise<CryptoKey> {
+  needSecurePage();
   const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt, iterations: 200_000, hash: "SHA-256" },
@@ -103,6 +110,7 @@ function makeRandom(seed: number[]) {
 }
 
 async function seedFrom(password: string): Promise<number[]> {
+  needSecurePage();
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode("hidepix-scatter:" + password)));
   const view = new DataView(hash.buffer);
   return [view.getUint32(0), view.getUint32(4), view.getUint32(8), view.getUint32(12)];
@@ -215,6 +223,10 @@ export async function extractFromPixels(px: Uint8ClampedArray, width: number, he
 // ---------- Browser helpers: image <-> pixels ----------
 async function loadPixels(url: string) {
   const bitmap = await createImageBitmap(await (await fetch(url)).blob());
+  const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isPhone && bitmap.width * bitmap.height > 16_000_000) { // phone browsers fail silently on very large canvases
+    throw new StegoError("This picture is too large for a phone browser (over 16 megapixels). Use a smaller picture, or open the site on a computer.");
+  }
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;

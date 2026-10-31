@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dropzone, LoadedImage } from "./components/Dropzone";
+import logo from "./logo/hidepix.png";
+import { inAppBrowser, saveImage } from "./utils/Save";
 import { StegoError, capacityBytes, hideMessage, revealMessage } from "./utils/stego";
 
 type Mode = "hide" | "reveal";
@@ -37,6 +39,7 @@ export default function App() {
   const [compress, setCompress] = useState(true);
   const [scatter, setScatter] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [hideFile, setHideFile] = useState<File | null>(null); // the finished PNG, ready for the share sheet
 
   useEffect(() => {
     document.documentElement.style.colorScheme = theme;
@@ -53,13 +56,15 @@ export default function App() {
   const tooBig = (img: LoadedImage | null) => !!img && img.size > MAX_UPLOAD_MB * 1024 * 1024;
 
   const runHide = async () => {
-    setBusy(true); setHideError(null); setHideResult(null);
+    setBusy(true); setHideError(null); setHideResult(null); setHideFile(null);
     const minTime = new Promise((r) => setTimeout(r, 700)); // keeps the animation visible on small images
     await new Promise((r) => setTimeout(r, 30)); // let the loading state paint before the heavy work starts
     try {
       const url = await hideMessage(cover!.url, message, { method: method === "lsbm" ? "lsbm" : "lsb", compress, scatter, password: hidePw });
+      const file = new File([await (await fetch(url)).blob()], "hidden-message.png", { type: "image/png" });
       await minTime;
       setHideResult(url);
+      setHideFile(file);
       setCover(null); // empties the picture slot
       setMessage(""); // clears the message box
       setHidePw(""); // clears the password
@@ -93,9 +98,7 @@ export default function App() {
       <div className="relative z-10 mx-auto max-w-xl px-5 py-7 sm:py-11">
         <header className="mb-9 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-purple-700 shadow-lg shadow-purple-500/20">
-              <svg className="h-5 w-5 text-zinc-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><path d="M3 3l18 18" /></svg>
-            </div>
+            <img src={logo} alt="Hidepix" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
             <div>
               <div className="text-sm font-semibold tracking-tight text-white">Hidepix</div>
               <div className="brand-caption">PRIVATE IMAGE TOOL</div>
@@ -165,12 +168,15 @@ export default function App() {
 
               {hideResult && (
                 <ResultBox title="Done! Your picture is ready.">
-                  <img src={hideResult} className="mx-auto max-h-56 rounded-lg object-contain" />
-                  <a href={hideResult} download="hidden-message.png" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-purple-400">
+                  <img src={hideResult} alt="Picture with the hidden message" className="mx-auto max-h-72 rounded-lg object-contain" />
+                  <button type="button" onClick={() => hideFile && saveImage(hideFile, hideResult)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-purple-400">
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16" /></svg>
-                    Download photo (PNG)
-                  </a>
+                    Save / share picture (PNG)
+                  </button>
+                  <a href={hideResult} download="hidden-message.png" className="mt-2 block text-center text-xs text-purple-300 underline">Or download directly</a>
                   <p className="mt-2 text-center text-xs text-zinc-400">Send this as a <b className="text-zinc-200">file</b>, not as a photo. Messaging apps compress photos and will destroy the hidden message.</p>
+                  <p className="mt-1 text-center text-xs text-zinc-500">On a phone and nothing saves? Press and hold the picture above and choose Save image or Add to Photos.</p>
+                  {inAppBrowser() && <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">This looks like an in-app browser (Messenger, Instagram, etc.), which often blocks downloads. Open this page in Chrome or Safari instead.</p>}
                 </ResultBox>
               )}
             </>
