@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dropzone, LoadedImage } from "./components/Dropzone";
 import logo from "./logo/hidepix.png";
+import { MAX_PNG_MB, prepareCover } from "./utils/Image";
 import { inAppBrowser, saveImage } from "./utils/Save";
 import { StegoError, capacityBytes, hideMessage, revealMessage } from "./utils/stego";
 
 type Mode = "hide" | "reveal";
 type Theme = "dark" | "light";
-const MAX_UPLOAD_MB = 10;
+const MAX_REVEAL_MB = 40; // a Hidepix PNG can be much bigger than the original photo
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("hide");
@@ -53,7 +54,7 @@ export default function App() {
   const msgSize = useMemo(() => new TextEncoder().encode(message).length, [message]);
   const maxChars = useMemo(() => (cover ? capacityBytes(cover.width, cover.height, hidePw.length > 0) : 0), [cover, hidePw]);
   const tooLong = cover !== null && msgSize > maxChars;
-  const tooBig = (img: LoadedImage | null) => !!img && img.size > MAX_UPLOAD_MB * 1024 * 1024;
+  const tooBig = (img: LoadedImage | null, limitMb: number) => !!img && img.size > limitMb * 1024 * 1024;
 
   const runHide = async () => {
     setBusy(true); setHideError(null); setHideResult(null); setHideFile(null);
@@ -90,8 +91,8 @@ export default function App() {
     setBusy(false);
   };
 
-  const hideReady = !!cover && !tooBig(cover) && message.trim().length > 0 && !tooLong;
-  const revealReady = !!stego && !tooBig(stego);
+  const hideReady = !!cover && !tooBig(cover, MAX_PNG_MB) && message.trim().length > 0 && !tooLong;
+  const revealReady = !!stego && !tooBig(stego, MAX_REVEAL_MB);
 
   return (
     <div className="app-shell min-h-screen" data-theme={theme}>
@@ -137,7 +138,7 @@ export default function App() {
           {mode === "hide" ? (
             <>
               <Step n={1} title="Choose a picture" />
-              <Dropzone image={cover} onImage={(i) => { setCover(i); setHideResult(null); }} onClear={() => { setCover(null); setHideResult(null); }} label="Drop a picture here" />
+              <Dropzone image={cover} onImage={(i) => { setCover(i); setHideResult(null); }} onClear={() => { setCover(null); setHideResult(null); }} label="Drop a picture here" prepare={prepareCover} />
               <ImageNotices img={cover} />
 
               <Step n={2} title="Write your secret message" />
@@ -203,7 +204,7 @@ export default function App() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-[11px] text-zinc-600">PNG works best · Max {MAX_UPLOAD_MB} MB per picture</p>
+        <p className="mt-6 text-center text-[11px] text-zinc-600">Any picture works: it's converted to PNG and resized automatically when needed</p>
       </div>
     </div>
   );
@@ -214,8 +215,10 @@ export default function App() {
 function ImageNotices({ img, revealMode }: { img: LoadedImage | null; revealMode?: boolean }) {
   if (!img) return null;
   const jpg = /jpe?g/i.test(img.type);
-  const big = img.size > MAX_UPLOAD_MB * 1024 * 1024;
-  if (big) return <ErrorBox>This picture is {(img.size / 1048576).toFixed(1)} MB. The limit is {MAX_UPLOAD_MB} MB — please pick a smaller one.</ErrorBox>;
+  const limitMb = revealMode ? MAX_REVEAL_MB : MAX_PNG_MB;
+  const big = img.size > limitMb * 1024 * 1024;
+  if (big) return <ErrorBox>This picture is {(img.size / 1048576).toFixed(1)} MB. The limit is {limitMb} MB — please pick a smaller one.</ErrorBox>;
+  if (img.note) return <div className="rounded-lg border border-purple-500/25 bg-purple-500/10 px-3.5 py-2.5 text-xs text-purple-200">{img.note}</div>;
   if (jpg) return (
     <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
       {revealMode

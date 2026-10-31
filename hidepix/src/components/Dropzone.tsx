@@ -1,15 +1,32 @@
 import { useRef, useState } from "react";
 
-export type LoadedImage = { name: string; size: number; url: string; width: number; height: number; type: string };
+export type LoadedImage = { name: string; size: number; url: string; width: number; height: number; type: string; note?: string };
 
-export function Dropzone({ image, onImage, onClear, label }: { image: LoadedImage | null; onImage: (img: LoadedImage) => void; onClear: () => void; label: string }) {
+export function Dropzone({ image, onImage, onClear, label, prepare }: { image: LoadedImage | null; onImage: (img: LoadedImage) => void; onClear: () => void; label: string; prepare?: (file: File) => Promise<{ file: File; note?: string }> }) {
   const [drag, setDrag] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = (file: File) => {
+  // If a prepare function is given (cover picture), the file is converted/shrunk first.
+  const load = async (original: File) => {
+    setError(null);
+    let file: File = original;
+    let note: string | undefined;
+    if (prepare) {
+      setWorking(true);
+      try {
+        ({ file, note } = await prepare(original));
+      } catch (e) {
+        setWorking(false);
+        setError(e instanceof Error ? e.message : "Couldn't read this picture.");
+        return;
+      }
+    }
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => onImage({ name: file.name, size: file.size, url, width: img.width, height: img.height, type: file.type });
+    img.onload = () => { setWorking(false); onImage({ name: file.name, size: file.size, url, width: img.width, height: img.height, type: file.type, note }); };
+    img.onerror = () => { setWorking(false); setError("Couldn't read this picture."); };
     img.src = url;
   };
 
@@ -40,8 +57,9 @@ export function Dropzone({ image, onImage, onClear, label }: { image: LoadedImag
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 text-purple-400">
         <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
       </div>
-      <p className="text-sm font-medium text-zinc-200">{label}</p>
-      <p className="mt-1 text-xs text-zinc-500">Drag & drop or click to browse · PNG, BMP recommended (lossless)</p>
+      <p className="text-sm font-medium text-zinc-200">{working ? "Preparing your picture…" : label}</p>
+      <p className="mt-1 text-xs text-zinc-500">Drag & drop or click to browse{prepare ? " · any picture works, it's converted to PNG automatically" : " · PNG recommended"}</p>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </div>
   );
 }
