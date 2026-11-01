@@ -10,11 +10,13 @@ Live site: hidepix.vercel.app
 ### Hide Tab
 ![Hide Tab](src/logo/hideimage.png)
 
+### Reveal Tab
+![Reveal Tab](./src/logo/revealimage.png)
+
 ### Detect Tab
 ![Detect Tab](src/logo/detectimage.png)
 
-### Reveal Tab
-![Reveal Tab](src/logo/revealim​age.png)
+
 
 ## What it does
 
