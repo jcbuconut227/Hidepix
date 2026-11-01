@@ -1,6 +1,6 @@
 // Run with:  npm test   (needs Node 22.12 or newer)
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "node:test";   
 import { capacityBytes, embedInPixels, extractFromPixels, inspectHeader, StegoError, type HideOptions } from "../src/utils/stego.ts";
 import { chiSquareLsb, diffPixels, generatePassword, lsbPlane, passwordStrength } from "../src/utils/analyze.ts";
 

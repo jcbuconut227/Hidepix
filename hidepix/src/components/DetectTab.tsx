@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Analysis, analyzePicture } from "../utils/analyze";
 import { Dropzone, LoadedImage } from "./Dropzone";
-import { HashLine } from "./Hashline";
+import { HashLine } from "./HashLine";
 
 function Panel({ title, tone, children }: { title: string; tone?: "purple"; children: React.ReactNode }) {
   const style = tone === "purple" ? "border-purple-500/30 bg-purple-500/5" : "border-white/10 bg-zinc-950/40";

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChangesPanel } from "./components/CompareSlider";
 import { DetectTab } from "./components/DetectTab";
 import { Dropzone, LoadedImage } from "./components/Dropzone";
-import { HashLine } from "./components/Hashline";
+import { HashLine } from "./components/HashLine";
 import { HowItWorks } from "./components/HowItWorks";
 import logo from "./logo/hidepix.png";
 import { generatePassword, passwordStrength } from "./utils/analyze";
