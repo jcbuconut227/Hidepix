@@ -4,10 +4,17 @@ A small website that hides a text message inside a picture and reads it back out
 
 Live site: hidepix.vercel.app
 
-<!-- Add screenshots later:
-![Hide tab](docs/hide.png)
-![Detect tab](docs/detect.png)
--->
+
+## Screenshots
+
+### Hide Tab
+![Hide Tab](src/logo/hideimage.png)
+
+### Detect Tab
+![Detect Tab](src/logo/detectimage.png)
+
+### Reveal Tab
+![Reveal Tab](src/logo/revealim​age.png)
 
 ## What it does
 
