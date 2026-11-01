@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type LoadedImage = { name: string; size: number; url: string; width: number; height: number; type: string; note?: string };
 
@@ -30,6 +30,17 @@ export function Dropzone({ image, onImage, onClear, label, prepare }: { image: L
     img.src = url;
   };
 
+  // Ctrl+V pastes a picture from the clipboard while the drop zone is empty
+  useEffect(() => {
+    if (image) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const pasted = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
+      if (pasted) { e.preventDefault(); load(pasted); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+
   if (image) {
     return (
       <div className="dropzone-preview relative overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
@@ -51,6 +62,10 @@ export function Dropzone({ image, onImage, onClear, label, prepare }: { image: L
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) load(f); }}
       onClick={() => inputRef.current?.click()}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
       className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-14 text-center transition ${drag ? "border-purple-400 bg-purple-500/10" : "border-white/10 bg-zinc-950/40 hover:border-white/20 hover:bg-zinc-950/70"}`}
     >
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} />
@@ -58,7 +73,7 @@ export function Dropzone({ image, onImage, onClear, label, prepare }: { image: L
         <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
       </div>
       <p className="text-sm font-medium text-zinc-200">{working ? "Preparing your picture…" : label}</p>
-      <p className="mt-1 text-xs text-zinc-500">Drag & drop or click to browse{prepare ? " · any picture works, it's converted to PNG automatically" : " · PNG recommended"}</p>
+      <p className="mt-1 text-xs text-zinc-500">Drag & drop, click to browse, or paste (Ctrl+V){prepare ? " · any picture works, it's converted to PNG automatically" : " · PNG recommended"}</p>
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </div>
   );

@@ -18,7 +18,8 @@ export class StegoError extends Error {}
 // 12 bytes, always stored first and always in order, so Reveal can read the settings from the image:
 // [0-1] "HP" marker | [2] version | [3] flags | [4-7] payload length | [8-11] CRC32 of the payload
 const MAGIC = [0x48, 0x50];
-const VERSION = 1;
+const VERSION = 2; // 2 = PBKDF2 with 600,000 rounds. Version 1 (200,000 rounds) can still be read.
+const PBKDF2_ROUNDS: Record<number, number> = { 1: 200_000, 2: 600_000 };
 const HEADER_BYTES = 12;
 const FLAG_COMPRESSED = 1;
 const FLAG_ENCRYPTED = 2;
@@ -65,11 +66,11 @@ function needSecurePage() {
   }
 }
 
-async function deriveKey(password: string, salt: Bytes): Promise<CryptoKey> {
+async function deriveKey(password: string, salt: Bytes, rounds: number): Promise<CryptoKey> {
   needSecurePage();
   const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 200_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations: rounds, hash: "SHA-256" },
     base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"],
   );
 }
@@ -77,13 +78,13 @@ async function deriveKey(password: string, salt: Bytes): Promise<CryptoKey> {
 async function encrypt(data: Bytes, password: string): Promise<Bytes> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(password, salt);
+  const key = await deriveKey(password, salt, PBKDF2_ROUNDS[VERSION]);
   const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data));
   return concat(salt, iv, cipher); // stored as: salt + iv + encrypted data
 }
 
-async function decrypt(data: Bytes, password: string): Promise<Bytes> {
-  const key = await deriveKey(password, data.slice(0, 16));
+async function decrypt(data: Bytes, password: string, version: number): Promise<Bytes> {
+  const key = await deriveKey(password, data.slice(0, 16), PBKDF2_ROUNDS[version]);
   try {
     return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: data.slice(16, 28) }, key, data.slice(28)));
   } catch {
@@ -201,7 +202,7 @@ export async function extractFromPixels(px: Uint8ClampedArray, width: number, he
   if (totalSlots < HEADER_BYTES * 8) throw notFound();
 
   const header = readBytes(px, headerSlots(), HEADER_BYTES);
-  if (header[0] !== MAGIC[0] || header[1] !== MAGIC[1] || header[2] !== VERSION) throw notFound();
+  if (header[0] !== MAGIC[0] || header[1] !== MAGIC[1] || !PBKDF2_ROUNDS[header[2]]) throw notFound();
 
   const view = new DataView(header.buffer);
   const flags = header[3];
@@ -215,13 +216,32 @@ export async function extractFromPixels(px: Uint8ClampedArray, width: number, he
     throw new StegoError("Couldn't read the message. The image may have been modified, or the password is wrong.");
   }
 
-  if (flags & FLAG_ENCRYPTED) data = await decrypt(data, password);
+  if (flags & FLAG_ENCRYPTED) data = await decrypt(data, password, header[2]);
   if (flags & FLAG_COMPRESSED) data = await runStream(data, new DecompressionStream("deflate-raw"));
   return new TextDecoder().decode(data);
 }
 
+/** Looks for a Hidepix header without needing a password. Returns null when there is none. */
+export function inspectHeader(px: Uint8ClampedArray, width: number, height: number) {
+  const totalSlots = width * height * 3;
+  if (totalSlots < HEADER_BYTES * 8) return null;
+  const header = readBytes(px, headerSlots(), HEADER_BYTES);
+  if (header[0] !== MAGIC[0] || header[1] !== MAGIC[1] || !PBKDF2_ROUNDS[header[2]]) return null;
+  const length = new DataView(header.buffer).getUint32(4);
+  if (length > Math.floor((totalSlots - HEADER_BYTES * 8) / 8)) return null;
+  const flags = header[3];
+  return {
+    version: header[2],
+    length,
+    compressed: (flags & FLAG_COMPRESSED) !== 0,
+    encrypted: (flags & FLAG_ENCRYPTED) !== 0,
+    scattered: (flags & FLAG_SCATTERED) !== 0,
+    matching: (flags & FLAG_MATCHING) !== 0,
+  };
+}
+
 // ---------- Browser helpers: image <-> pixels ----------
-async function loadPixels(url: string) {
+export async function loadPixels(url: string) {
   const bitmap = await createImageBitmap(await (await fetch(url)).blob());
   const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (isPhone && bitmap.width * bitmap.height > 16_000_000) { // phone browsers fail silently on very large canvases

@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import { ChangesPanel } from "./components/CompareSlider";
+import { DetectTab } from "./components/DetectTab";
 import { Dropzone, LoadedImage } from "./components/Dropzone";
+import { HashLine } from "./components/Hashline";
+import { HowItWorks } from "./components/HowItWorks";
 import logo from "./logo/hidepix.png";
-import { MAX_PNG_MB, prepareCover } from "./utils/Image";
-import { inAppBrowser, saveImage } from "./utils/Save";
+import { generatePassword, passwordStrength } from "./utils/analyze";
+import { MAX_PNG_MB, prepareCover } from "./utils/image";
+import { inAppBrowser, saveImage } from "./utils/save";
 import { StegoError, capacityBytes, hideMessage, revealMessage } from "./utils/stego";
 
-type Mode = "hide" | "reveal";
+type Mode = "hide" | "reveal" | "detect";
 type Theme = "dark" | "light";
 const MAX_REVEAL_MB = 40; // a Hidepix PNG can be much bigger than the original photo
 
@@ -41,6 +46,9 @@ export default function App() {
   const [scatter, setScatter] = useState(true);
   const [busy, setBusy] = useState(false);
   const [hideFile, setHideFile] = useState<File | null>(null); // the finished PNG, ready for the share sheet
+  const [hideBefore, setHideBefore] = useState<string | null>(null); // the cover picture, for the before/after view
+  const [hadPw, setHadPw] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
     document.documentElement.style.colorScheme = theme;
@@ -57,7 +65,7 @@ export default function App() {
   const tooBig = (img: LoadedImage | null, limitMb: number) => !!img && img.size > limitMb * 1024 * 1024;
 
   const runHide = async () => {
-    setBusy(true); setHideError(null); setHideResult(null); setHideFile(null);
+    setBusy(true); setHideError(null); setHideResult(null); setHideFile(null); setHideBefore(null);
     const minTime = new Promise((r) => setTimeout(r, 700)); // keeps the animation visible on small images
     await new Promise((r) => setTimeout(r, 30)); // let the loading state paint before the heavy work starts
     try {
@@ -66,6 +74,8 @@ export default function App() {
       await minTime;
       setHideResult(url);
       setHideFile(file);
+      setHideBefore(cover!.url);
+      setHadPw(hidePw.length > 0);
       setCover(null); // empties the picture slot
       setMessage(""); // clears the message box
       setHidePw(""); // clears the password
@@ -89,6 +99,13 @@ export default function App() {
       setRevealError(e instanceof StegoError ? e.message : "Couldn't read this picture.");
     }
     setBusy(false);
+  };
+
+  const clearAll = () => {
+    [cover?.url, stego?.url, hideResult, hideBefore].forEach((u) => u && URL.revokeObjectURL(u));
+    setCover(null); setMessage(""); setHidePw(""); setHideResult(null); setHideFile(null); setHideBefore(null); setHideError(null); setHadPw(false);
+    setStego(null); setRevealPw(""); setRevealResult(null); setRevealError(null);
+    setResetKey((k) => k + 1); // also empties the Detect tab
   };
 
   const hideReady = !!cover && !tooBig(cover, MAX_PNG_MB) && message.trim().length > 0 && !tooLong;
@@ -126,10 +143,10 @@ export default function App() {
           <p className="mt-1.5 text-sm text-zinc-500">Everything runs in your browser. Nothing is uploaded.</p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 rounded-xl border border-white/10 bg-zinc-900/70 p-1">
-          {(["hide", "reveal"] as Mode[]).map((m) => (
+        <div className="mb-6 grid grid-cols-3 rounded-xl border border-white/10 bg-zinc-900/70 p-1">
+          {(["hide", "reveal", "detect"] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)} className={`rounded-lg py-2.5 text-sm font-medium transition ${mode === m ? "bg-purple-500 text-zinc-950 shadow" : "text-zinc-400 hover:text-white"}`}>
-              {m === "hide" ? "Hide a message" : "Reveal a message"}
+              {m === "hide" ? "Hide" : m === "reveal" ? "Reveal" : "Detect"}
             </button>
           ))}
         </div>
@@ -146,6 +163,7 @@ export default function App() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={4}
+                aria-label="Secret message"
                 placeholder="Type something only the right person should read…"
                 className={`w-full resize-none rounded-xl border bg-zinc-950/60 p-3.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 ${tooLong ? "border-red-500/50 focus:ring-red-500/20" : "border-white/10 focus:border-purple-500/50 focus:ring-purple-500/20"}`}
               />
@@ -159,7 +177,7 @@ export default function App() {
               </div>
 
               <Step n={3} title="Password" optional />
-              <PasswordInput value={hidePw} onChange={setHidePw} placeholder="Optional" />
+              <PasswordInput value={hidePw} onChange={setHidePw} placeholder="Optional" tools />
               <p className="-mt-2 text-xs text-zinc-500">If set, the message is encrypted with this password before it's hidden. Without it, anyone with the right tool can read it.</p>
 
               <Advanced open={advanced} toggle={() => setAdvanced((a) => !a)} method={method} setMethod={setMethod} compress={compress} setCompress={setCompress} scatter={scatter} setScatter={setScatter} />
@@ -178,14 +196,20 @@ export default function App() {
                   <p className="mt-2 text-center text-xs text-zinc-400">Send this as a <b className="text-zinc-200">file</b>, not as a photo. Messaging apps compress photos and will destroy the hidden message.</p>
                   <p className="mt-1 text-center text-xs text-zinc-500">On a phone and nothing saves? Press and hold the picture above and choose Save image or Add to Photos.</p>
                   {inAppBrowser() && <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">This looks like an in-app browser (Messenger, Instagram, etc.), which often blocks downloads. Open this page in Chrome or Safari instead.</p>}
+                  <HashLine url={hideResult} label="SHA-256 of this PNG. Send it to the receiver by a different route, so they can check the file wasn't changed on the way." />
+                  {hideBefore && <ChangesPanel beforeUrl={hideBefore} afterUrl={hideResult} />}
+                  {hadPw && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">Remember your password. It isn't stored anywhere, and the message can't be recovered without it.</p>}
                 </ResultBox>
               )}
             </>
+          ) : mode === "detect" ? (
+            <DetectTab key={resetKey} />
           ) : (
             <>
               <Step n={1} title="Choose the picture with the hidden message" />
               <Dropzone image={stego} onImage={(i) => { setStego(i); setRevealResult(null); setRevealError(null); }} onClear={() => { setStego(null); setRevealResult(null); setRevealError(null); }} label="Drop the picture here" />
               <ImageNotices img={stego} revealMode />
+              {stego && <HashLine url={stego.url} label="SHA-256 of this picture. Compare it with the one the sender gave you." />}
 
               <Step n={2} title="Password" optional />
               <PasswordInput value={revealPw} onChange={setRevealPw} placeholder="Leave empty if no password was set" />
@@ -204,7 +228,11 @@ export default function App() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-[11px] text-zinc-600">Any picture works: it's converted to PNG and resized automatically when needed</p>
+        <div className="mt-6 flex flex-col items-center gap-2 text-center">
+          <p className="text-[11px] text-zinc-600">Any picture works: it's converted to PNG and resized automatically when needed</p>
+          <button type="button" onClick={clearAll} className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white">Clear everything</button>
+        </div>
+        <HowItWorks />
       </div>
     </div>
   );
@@ -229,30 +257,55 @@ function ImageNotices({ img, revealMode }: { img: LoadedImage | null; revealMode
   return null;
 }
 
-function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+function PasswordInput({ value, onChange, placeholder, tools }: { value: string; onChange: (v: string) => void; placeholder: string; tools?: boolean }) {
   const [show, setShow] = useState(false);
+  const [generated, setGenerated] = useState(false);
   // A real type="password" field makes browsers offer to save the password.
   // Where the browser supports it, we use a normal text field and hide the characters with CSS instead (.pw-mask).
   const canMask = typeof CSS !== "undefined" && CSS.supports("-webkit-text-security", "disc");
+  const strength = tools ? passwordStrength(value) : null;
+  const bar = ["", "bg-red-500", "bg-amber-500", "bg-purple-400", "bg-purple-500"];
+
+  const generate = () => {
+    const pw = generatePassword();
+    onChange(pw);
+    setShow(true);
+    setGenerated(true);
+    navigator.clipboard?.writeText(pw).catch(() => {});
+  };
+
   return (
-    <div className="relative">
-      <input
-        type={show || canMask ? "text" : "password"}
-        autoComplete={canMask ? "off" : "new-password"}
-        name="hidepix-key"
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        data-lpignore="true"
-        data-1p-ignore="true"
-        data-bwignore="true"
-        data-form-type="other"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`w-full rounded-xl border border-white/10 bg-zinc-950/60 py-3 pl-3.5 pr-16 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 ${!show && canMask ? "pw-mask" : ""}`}
-      />
-      <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-white/5">{show ? "Hide" : "Show"}</button>
+    <div>
+      <div className="relative">
+        <input
+          type={show || canMask ? "text" : "password"}
+          autoComplete={canMask ? "off" : "new-password"}
+          name="hidepix-key"
+          aria-label="Password"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
+          data-form-type="other"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setGenerated(false); }}
+          placeholder={placeholder}
+          className={`w-full rounded-xl border border-white/10 bg-zinc-950/60 py-3 pl-3.5 pr-16 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 ${!show && canMask ? "pw-mask" : ""}`}
+        />
+        <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-white/5">{show ? "Hide" : "Show"}</button>
+      </div>
+      {tools && strength && (
+        <div className="mt-2 flex items-center gap-3">
+          <div className="h-1.5 flex-1 rounded-full bg-zinc-800">
+            <div className={`h-full rounded-full transition-all ${bar[strength.score]}`} style={{ width: `${strength.score * 25}%` }} />
+          </div>
+          <span className="w-20 text-xs text-zinc-400" aria-live="polite">{strength.label}</span>
+          <button type="button" onClick={generate} className="rounded-md border border-purple-500/40 px-2 py-1 text-xs text-purple-200 hover:bg-purple-500/10">Generate</button>
+        </div>
+      )}
+      {generated && <p className="mt-1 text-xs text-purple-300">Generated and copied to your clipboard. Save it somewhere safe, because it isn't stored.</p>}
     </div>
   );
 }
@@ -301,7 +354,7 @@ function ActionButton({ children, loading, ...rest }: React.ButtonHTMLAttributes
 
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-sm text-red-200">
+    <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-sm text-red-200">
       <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
       <span>{children}</span>
     </div>
@@ -310,7 +363,7 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 
 function ResultBox({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+    <div role="status" className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-medium text-purple-300">
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
         {title}
