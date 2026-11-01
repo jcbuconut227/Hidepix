@@ -2,7 +2,7 @@
 
 A small website that hides a text message inside a picture and reads it back out again. I built it to understand how steganography actually works, so the hiding, the encryption wiring and the detection are all written by hand instead of coming from a library.
 
-Live site: (put your Vercel link here)
+Live site: hidepix.vercel.app
 
 <!-- Add screenshots later:
 ![Hide tab](docs/hide.png)
