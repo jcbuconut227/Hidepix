@@ -37,9 +37,8 @@ export function DetectTab() {
   const chi = result?.chi;
   return (
     <>
-      <p className="text-sm text-zinc-400">Check a picture for signs of hidden data. Nothing is changed or uploaded.</p>
       <Dropzone image={img} onImage={(i) => { setImg(i); reset(); }} onClear={() => { setImg(null); reset(); }} label="Drop a picture to inspect" />
-      {img && <HashLine url={img.url} label="SHA-256 of this file (handy for looking it up in tools like VirusTotal)" />}
+      {img && <HashLine url={img.url} label="SHA-256 fingerprint" />}
       <button
         type="button"
         onClick={run}
@@ -54,12 +53,12 @@ export function DetectTab() {
         <div className="space-y-3">
           <Panel title={sig ? "Hidepix signature found" : "No Hidepix signature"} tone={sig ? "purple" : undefined}>
             {sig
-              ? `This picture holds a Hidepix message of about ${sig.length.toLocaleString()} bytes (${sig.encrypted ? "password protected" : "no password"}, ${sig.scattered ? "scattered" : "stored in order"}, ${sig.compressed ? "compressed" : "not compressed"}, ${sig.matching ? "LSB matching" : "LSB replacement"}). Open the Reveal tab to read it.`
-              : "The first pixels don't contain a Hidepix header. Data hidden by other tools would not show up here."}
+              ? `A Hidepix message of about ${sig.length.toLocaleString()} bytes (${sig.encrypted ? "password protected" : "no password"}, ${sig.scattered ? "scattered" : "stored in order"}, ${sig.compressed ? "compressed" : "not compressed"}, ${sig.matching ? "LSB matching" : "LSB replacement"}). Read it in the Reveal tab.`
+              : "Messages hidden by other tools won't show up here."}
           </Panel>
 
           <Panel title={chi.p > 0.05 ? "Possible LSB embedding across the picture" : "No sign of heavy LSB embedding"}>
-            Chi-square test: p = {chi.p.toFixed(3)} (χ² = {chi.chi2.toFixed(0)}, {chi.df} value pairs). It only catches pictures filled close to capacity with plain LSB replacement. Small messages, and LSB matching, usually pass unnoticed.
+            p = {chi.p.toFixed(3)}. This test only catches pictures filled close to capacity.
           </Panel>
 
           <div>
@@ -70,10 +69,10 @@ export function DetectTab() {
               </button>
             </div>
             <img src={lastBits ? result.planeUrl : img!.url} alt={lastBits ? "Last bit of every colour value" : "Original picture"} className="mx-auto max-h-72 rounded-lg object-contain" />
-            <p className="mt-2 text-xs text-zinc-500">The last-bit view shows only the last bit of every colour value. In a flat-coloured picture it looks smooth, and hidden data shows up as a patch of noise. Photos are noisy anyway, so it works best on graphics.</p>
+            <p className="mt-2 text-xs text-zinc-500">Shows only the last bit of each colour value. Hidden data appears as noise, mostly in flat-coloured pictures.</p>
           </div>
 
-          <p className="text-xs text-zinc-500">No tool can prove a picture is clean. These checks are hints, not verdicts.</p>
+          <p className="text-xs text-zinc-500">Hints, not proof.</p>
         </div>
       )}
     </>

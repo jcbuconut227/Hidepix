@@ -69,3 +69,28 @@ async function drawToPng(bitmap: ImageBitmap, w: number, h: number): Promise<Blo
   if (!blob) throw new Error("Couldn't convert this picture to PNG.");
   return blob;
 }
+
+/** A generated sample picture (purple gradient with soft circles) for the "Try a demo" button. */
+export async function makeDemoPicture(): Promise<{ file: File; width: number; height: number }> {
+  const width = 960;
+  const height = 640;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#1a1033");
+  gradient.addColorStop(0.5, "#6b21a8");
+  gradient.addColorStop(1, "#c084fc");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  for (let i = 0; i < 14; i++) {
+    ctx.beginPath();
+    ctx.arc((i * 197) % width, (i * 131) % height, 40 + ((i * 53) % 90), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.04 + (i % 4) * 0.025})`;
+    ctx.fill();
+  }
+  const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/png"));
+  if (!blob) throw new Error("Couldn't create the demo picture.");
+  return { file: new File([blob], "demo.png", { type: "image/png" }), width, height };
+}

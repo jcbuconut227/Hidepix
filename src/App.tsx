@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangesPanel } from "./components/CompareSlider";
 import { DetectTab } from "./components/DetectTab";
 import { Dropzone, LoadedImage } from "./components/Dropzone";
@@ -6,7 +6,7 @@ import { HashLine } from "./components/HashLine";
 import { HowItWorks } from "./components/HowItWorks";
 import logo from "./logo/hidepix.png";
 import { generatePassword, passwordStrength } from "./utils/analyze";
-import { MAX_PNG_MB, prepareCover } from "./utils/image";
+import { MAX_PNG_MB, makeDemoPicture, prepareCover } from "./utils/image";
 import { inAppBrowser, saveImage } from "./utils/save";
 import { StegoError, capacityBytes, hideMessage, revealMessage } from "./utils/stego";
 
@@ -49,6 +49,7 @@ export default function App() {
   const [hideBefore, setHideBefore] = useState<string | null>(null); // the cover picture, for the before/after view
   const [hadPw, setHadPw] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const doneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.style.colorScheme = theme;
@@ -58,6 +59,11 @@ export default function App() {
       // The theme still works when storage is unavailable.
     }
   }, [theme]);
+
+  // After hiding, bring the result into view (helps on phones)
+  useEffect(() => {
+    if (hideResult) doneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hideResult]);
 
   const msgSize = useMemo(() => new TextEncoder().encode(message).length, [message]);
   const maxChars = useMemo(() => (cover ? capacityBytes(cover.width, cover.height, hidePw.length > 0) : 0), [cover, hidePw]);
@@ -108,12 +114,30 @@ export default function App() {
     setResetKey((k) => k + 1); // also empties the Detect tab
   };
 
+  const newHide = () => {
+    [hideResult, hideBefore].forEach((u) => u && URL.revokeObjectURL(u));
+    setHideResult(null); setHideFile(null); setHideBefore(null); setHadPw(false); setHideError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const tryDemo = async () => {
+    try {
+      const demo = await makeDemoPicture();
+      setCover({ name: demo.file.name, size: demo.file.size, url: URL.createObjectURL(demo.file), width: demo.width, height: demo.height, type: "image/png" });
+      setMessage("This message is hidden inside a picture.");
+      setHideError(null);
+    } catch {
+      setHideError("Couldn't create the demo picture.");
+    }
+  };
+
   const hideReady = !!cover && !tooBig(cover, MAX_PNG_MB) && message.trim().length > 0 && !tooLong;
   const revealReady = !!stego && !tooBig(stego, MAX_REVEAL_MB);
+  const showBar = (mode === "hide" && !hideResult) || mode === "reveal"; // fixed action button on phones
 
   return (
     <div className="app-shell min-h-screen" data-theme={theme}>
-      <div className="relative z-10 mx-auto max-w-xl px-5 py-7 sm:py-11">
+      <div className={`relative z-10 mx-auto max-w-xl px-5 pt-7 sm:pb-11 sm:pt-11 ${showBar ? "pb-28" : "pb-7"}`}>
         <header className="mb-9 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <img src={logo} alt="Hidepix" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
@@ -139,7 +163,7 @@ export default function App() {
         </header>
 
         <div className="mb-7 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Hide a message in a picture</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-white">{mode === "hide" ? "Hide a message in a picture" : mode === "reveal" ? "Reveal a hidden message" : "Check a picture for hidden data"}</h1>
           <p className="mt-1.5 text-sm text-zinc-500">Everything runs in your browser. Nothing is uploaded.</p>
         </div>
 
@@ -153,13 +177,33 @@ export default function App() {
 
         <div className="flow-panel space-y-4 rounded-2xl border border-white/10 bg-zinc-900/60 p-5 backdrop-blur sm:p-6">
           {mode === "hide" ? (
-            <>
-              <Step n={1} title="Choose a picture" />
-              <Dropzone image={cover} onImage={(i) => { setCover(i); setHideResult(null); }} onClear={() => { setCover(null); setHideResult(null); }} label="Drop a picture here" prepare={prepareCover} />
-              <ImageNotices img={cover} />
+            hideResult ? (
+              <div ref={doneRef} className="scroll-mt-4 space-y-4">
+                <div role="status" className="text-center">
+                  <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-purple-500/15 text-purple-300">
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  </div>
+                  <h2 className="text-lg font-semibold text-white">Your picture is ready</h2>
+                </div>
+                <img src={hideResult} alt="Picture with the hidden message" className="mx-auto max-h-80 rounded-xl object-contain" />
+                <ActionButton type="button" onClick={() => hideFile && saveImage(hideFile, hideResult)}>Save / share picture (PNG)</ActionButton>
+                <a href={hideResult} download="hidden-message.png" className="block text-center text-xs text-purple-300 underline">Or download directly</a>
+                <p className="text-center text-xs text-zinc-400">Send it as a file, not as a photo, or the message is lost. Nothing saving? Press and hold the picture.</p>
+                {inAppBrowser() && <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">This looks like an in-app browser (Messenger, Instagram, etc.), which often blocks downloads. Open this page in Chrome or Safari instead.</p>}
+                {hadPw && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">Remember your password. It isn't stored anywhere, and the message can't be recovered without it.</p>}
+                {hideBefore && <ChangesPanel beforeUrl={hideBefore} afterUrl={hideResult} />}
+                <HashLine url={hideResult} label="SHA-256 fingerprint" />
+                <button type="button" onClick={newHide} className="w-full rounded-xl border border-white/10 py-3 text-sm font-medium text-zinc-200 hover:bg-white/5">Hide another message</button>
+              </div>
+            ) : (
+              <>
+                <Step n={1} title="Choose a picture" />
+                <Dropzone image={cover} onImage={(i) => setCover(i)} onClear={() => setCover(null)} label="Drop a picture here" prepare={prepareCover} compact />
+                {!cover && <button type="button" onClick={tryDemo} className="-mt-1 text-xs text-purple-300 underline">No picture handy? Try a demo</button>}
+                <ImageNotices img={cover} />
 
-              <Step n={2} title="Write your secret message" />
-              <textarea
+                <Step n={2} title="Write your secret message" />
+                <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={4}
@@ -167,55 +211,37 @@ export default function App() {
                 placeholder="Type something only the right person should read…"
                 className={`w-full resize-none rounded-xl border bg-zinc-950/60 p-3.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 ${tooLong ? "border-red-500/50 focus:ring-red-500/20" : "border-white/10 focus:border-purple-500/50 focus:ring-purple-500/20"}`}
               />
-              <div className="-mt-2 flex items-center justify-between text-xs">
-                <span className={tooLong ? "text-red-400" : "text-zinc-500"}>
-                  {tooLong ? "Message is too long for this picture. Shorten it or use a bigger picture." : cover ? "Fits comfortably" : "Add a picture to see how much fits"}
-                </span>
-                <span className={`font-mono ${tooLong ? "text-red-400" : "text-zinc-500"}`}>
-                  {msgSize.toLocaleString()} / {cover ? maxChars.toLocaleString() : "—"} bytes
-                </span>
-              </div>
+                <div className="-mt-2 flex items-center justify-between text-xs">
+                  <span className="text-red-400">{tooLong ? "Too long for this picture." : ""}</span>
+                  <span className={`font-mono ${tooLong ? "text-red-400" : "text-zinc-500"}`}>{msgSize.toLocaleString()} / {cover ? maxChars.toLocaleString() : "—"} bytes</span>
+                </div>
 
-              <Step n={3} title="Password" optional />
-              <PasswordInput value={hidePw} onChange={setHidePw} placeholder="Optional" tools />
-              <p className="-mt-2 text-xs text-zinc-500">If set, the message is encrypted with this password before it's hidden. Without it, anyone with the right tool can read it.</p>
+                <Step n={3} title="Password" optional />
+                <PasswordInput value={hidePw} onChange={setHidePw} placeholder="Optional. Encrypts the message." tools />
 
-              <Advanced open={advanced} toggle={() => setAdvanced((a) => !a)} method={method} setMethod={setMethod} compress={compress} setCompress={setCompress} scatter={scatter} setScatter={setScatter} />
+                <Advanced open={advanced} toggle={() => setAdvanced((a) => !a)} method={method} setMethod={setMethod} compress={compress} setCompress={setCompress} scatter={scatter} setScatter={setScatter} />
 
-              <ActionButton onClick={runHide} disabled={!hideReady || busy} loading={busy}>{busy ? "Hiding…" : "Hide message"}</ActionButton>
-              {hideError && <ErrorBox>{hideError}</ErrorBox>}
-
-              {hideResult && (
-                <ResultBox title="Done! Your picture is ready.">
-                  <img src={hideResult} alt="Picture with the hidden message" className="mx-auto max-h-72 rounded-lg object-contain" />
-                  <button type="button" onClick={() => hideFile && saveImage(hideFile, hideResult)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-purple-400">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16" /></svg>
-                    Save / share picture (PNG)
-                  </button>
-                  <a href={hideResult} download="hidden-message.png" className="mt-2 block text-center text-xs text-purple-300 underline">Or download directly</a>
-                  <p className="mt-2 text-center text-xs text-zinc-400">Send this as a <b className="text-zinc-200">file</b>, not as a photo. Messaging apps compress photos and will destroy the hidden message.</p>
-                  <p className="mt-1 text-center text-xs text-zinc-500">On a phone and nothing saves? Press and hold the picture above and choose Save image or Add to Photos.</p>
-                  {inAppBrowser() && <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">This looks like an in-app browser (Messenger, Instagram, etc.), which often blocks downloads. Open this page in Chrome or Safari instead.</p>}
-                  <HashLine url={hideResult} label="SHA-256 of this PNG. Send it to the receiver by a different route, so they can check the file wasn't changed on the way." />
-                  {hideBefore && <ChangesPanel beforeUrl={hideBefore} afterUrl={hideResult} />}
-                  {hadPw && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-center text-xs text-amber-200">Remember your password. It isn't stored anywhere, and the message can't be recovered without it.</p>}
-                </ResultBox>
-              )}
-            </>
+                <div className="hidden sm:block">
+                  <ActionButton onClick={runHide} disabled={!hideReady || busy} loading={busy}>{busy ? "Hiding…" : "Hide message"}</ActionButton>
+                </div>
+                {hideError && <ErrorBox>{hideError}</ErrorBox>}
+              </>
+            )
           ) : mode === "detect" ? (
             <DetectTab key={resetKey} />
           ) : (
             <>
               <Step n={1} title="Choose the picture with the hidden message" />
-              <Dropzone image={stego} onImage={(i) => { setStego(i); setRevealResult(null); setRevealError(null); }} onClear={() => { setStego(null); setRevealResult(null); setRevealError(null); }} label="Drop the picture here" />
+              <Dropzone image={stego} onImage={(i) => { setStego(i); setRevealResult(null); setRevealError(null); }} onClear={() => { setStego(null); setRevealResult(null); setRevealError(null); }} label="Drop the picture here" compact />
               <ImageNotices img={stego} revealMode />
-              {stego && <HashLine url={stego.url} label="SHA-256 of this picture. Compare it with the one the sender gave you." />}
+              {stego && <HashLine url={stego.url} label="SHA-256 fingerprint" />}
 
               <Step n={2} title="Password" optional />
-              <PasswordInput value={revealPw} onChange={setRevealPw} placeholder="Leave empty if no password was set" />
-              <p className="text-xs text-zinc-500">Method, compression and scatter are read from the picture automatically.</p>
+              <PasswordInput value={revealPw} onChange={setRevealPw} placeholder="Password, if one was set" />
 
-              <ActionButton onClick={runReveal} disabled={!revealReady || busy} loading={busy}>{busy ? "Revealing…" : "Reveal message"}</ActionButton>
+              <div className="hidden sm:block">
+                <ActionButton onClick={runReveal} disabled={!revealReady || busy} loading={busy}>{busy ? "Revealing…" : "Reveal message"}</ActionButton>
+              </div>
               {revealError && <ErrorBox>{revealError}</ErrorBox>}
 
               {revealResult && (
@@ -228,11 +254,20 @@ export default function App() {
           )}
         </div>
 
-        <div className="mt-6 flex flex-col items-center gap-2 text-center">
-          <p className="text-[11px] text-zinc-600">Any picture works: it's converted to PNG and resized automatically when needed</p>
+        <div className="mt-6 flex justify-center">
           <button type="button" onClick={clearAll} className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white">Clear everything</button>
         </div>
         <HowItWorks />
+
+        {showBar && (
+          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-zinc-950/70 px-5 pt-3 backdrop-blur sm:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+            {mode === "hide" ? (
+              <ActionButton onClick={runHide} disabled={!hideReady || busy} loading={busy}>{busy ? "Hiding…" : "Hide message"}</ActionButton>
+            ) : (
+              <ActionButton onClick={runReveal} disabled={!revealReady || busy} loading={busy}>{busy ? "Revealing…" : "Reveal message"}</ActionButton>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -328,8 +363,8 @@ function Advanced(p: { open: boolean; toggle: () => void; method: string; setMet
               <option value="dct" disabled>DCT (JPEG-safe) — coming soon</option>
             </select>
           </div>
-          <Check checked={p.compress} onChange={p.setCompress} label="Compress message first" desc="Fits more text in the same picture." />
-          <Check checked={p.scatter} onChange={p.setScatter} label="Scatter data randomly across the picture" desc="Uses the password as a seed. Harder to detect." />
+          <Check checked={p.compress} onChange={p.setCompress} label="Compress the message" />
+          <Check checked={p.scatter} onChange={p.setScatter} label="Scatter the bits across the picture" />
         </div>
       )}
     </div>
@@ -383,11 +418,11 @@ function Step({ n, title, optional }: { n: number; title: string; optional?: boo
   );
 }
 
-function Check({ checked, onChange, label, desc }: { checked: boolean; onChange: (v: boolean) => void; label: string; desc: string }) {
+function Check({ checked, onChange, label, desc }: { checked: boolean; onChange: (v: boolean) => void; label: string; desc?: string }) {
   return (
     <label className="flex cursor-pointer items-start gap-3">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-purple-500" />
-      <span><span className="block text-sm text-zinc-200">{label}</span><span className="block text-xs text-zinc-500">{desc}</span></span>
+      <span><span className="block text-sm text-zinc-200">{label}</span>{desc && <span className="block text-xs text-zinc-500">{desc}</span>}</span>
     </label>
   );
 }

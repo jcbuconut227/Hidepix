@@ -24,6 +24,7 @@ export function HowItWorks() {
           <li><b className="text-zinc-200">Password:</b> encrypts the message (AES-GCM). This is the real protection.</li>
           <li><b className="text-zinc-200">Scatter:</b> spreads the bits across the picture, which hides where they are. It does not protect the content.</li>
           <li><b className="text-zinc-200">Checksum:</b> lets Reveal tell "wrong password or edited picture" from a picture with no message.</li>
+          <li><b className="text-zinc-200">SHA-256:</b> a fingerprint of the finished file. Send it separately and the receiver can check the file wasn't changed.</li>
           <li><b className="text-zinc-200">Limits:</b> social media and messaging apps recompress photos and destroy the message. Send the PNG as a file.</li>
           <li><b className="text-zinc-200">Privacy:</b> everything runs in your browser. Nothing is uploaded.</li>
         </ul>

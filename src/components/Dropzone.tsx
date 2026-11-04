@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type LoadedImage = { name: string; size: number; url: string; width: number; height: number; type: string; note?: string };
 
-export function Dropzone({ image, onImage, onClear, label, prepare }: { image: LoadedImage | null; onImage: (img: LoadedImage) => void; onClear: () => void; label: string; prepare?: (file: File) => Promise<{ file: File; note?: string }> }) {
+export function Dropzone({ image, onImage, onClear, label, prepare, compact }: { image: LoadedImage | null; onImage: (img: LoadedImage) => void; onClear: () => void; label: string; compact?: boolean; prepare?: (file: File) => Promise<{ file: File; note?: string }> }) {
   const [drag, setDrag] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +40,19 @@ export function Dropzone({ image, onImage, onClear, label, prepare }: { image: L
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   });
+
+  if (image && compact) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/40 p-2.5">
+        <img src={image.url} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+        <div className="min-w-0 flex-1">
+          <div className="dropzone-name truncate text-sm font-medium">{image.name}</div>
+          <div className="dropzone-detail font-mono text-xs">{image.width}×{image.height} · {(image.size / 1024).toFixed(0)} KB</div>
+        </div>
+        <button type="button" onClick={onClear} className="dropzone-replace shrink-0 rounded-md px-2.5 py-1 text-xs transition">Change</button>
+      </div>
+    );
+  }
 
   if (image) {
     return (

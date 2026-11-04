@@ -48,7 +48,7 @@ function CompareSlider({ beforeUrl, afterUrl }: { beforeUrl: string; afterUrl: s
         {failed
           ? "Couldn't build the comparison on this device."
           : diff
-            ? `${diff.changed.toLocaleString()} of ${diff.total.toLocaleString()} pixels changed (${((diff.changed / diff.total) * 100).toFixed(3)}%), and no colour value moved by more than ${diff.maxChange}. That is why you can't see it.`
+            ? `${diff.changed.toLocaleString()} of ${diff.total.toLocaleString()} pixels changed (${((diff.changed / diff.total) * 100).toFixed(3)}%), none by more than ${diff.maxChange}.`
             : "Comparing…"}
       </p>
     </div>
